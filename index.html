@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IoT Dashboard</title>
+
+  <!-- Bootstrap + Chart.js -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="style.css">
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Favicon -->
+  <link rel="icon" href="icons/icon-192x192.png" type="image/png">
+
+  <!-- iOS Support -->
+  <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512x512.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="IoT Dashboard">
+
+  <!-- Windows Tile -->
+  <meta name="msapplication-TileImage" content="icons/icon-192x192.png">
+  <meta name="msapplication-TileColor" content="#2b5797">
+</head>
+ 
+<body>
+ 
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">Medisafe</a>
+      <div class="form-check form-switch text-light ms-auto">
+        <input class="form-check-input" type="checkbox" id="darkModeToggle">
+        <label class="form-check-label" for="darkModeToggle">Dark Mode</label>
+      </div>
+      <button class="btn btn-success btn-sm ms-3" id="authBtn">Authenticate</button>
+      <button class="btn btn-danger btn-sm ms-3" id="logoutBtn">Logout</button>
+    </div>
+  </nav>
+
+  <div class="container mt-4">
+    <div id="widgetContainer" class="row">
+
+      <!-- Threshold Settings -->
+      <div class="col-md-12 mb-3 widget">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">Custom Threshold Settings</h5>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label for="tempThreshold" class="form-label">Temperature Max (°C)</label>
+                <input type="number" id="tempThreshold" class="form-control" value="28" min="0" max="100">
+              </div>
+              <div class="col-md-4">
+                <label for="humidityThreshold" class="form-label">Humidity Max (%)</label>
+                <input type="number" id="humidityThreshold" class="form-control" value="80" min="0" max="100">
+              </div>
+              <div class="col-md-4">
+                <label for="vibrationThreshold" class="form-label">Vibration Max (g)</label>
+                <input type="number" id="vibrationThreshold" class="form-control" value="2" min="0" max="10">
+              </div>
+            </div>
+            <button class="btn btn-success mt-3" id="saveThresholdsBtn">Save Thresholds</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gauges -->
+      <div class="col-md-4 mb-3">
+        <div class="card shadow-sm text-center">
+          <div class="card-body">
+            <h5 class="card-title">Temperature</h5>
+            <canvas id="temperatureGauge" width="200" height="200"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4 mb-3">
+        <div class="card shadow-sm text-center">
+          <div class="card-body">
+            <h5 class="card-title">Humidity</h5>
+            <canvas id="humidityGauge" width="200" height="200"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4 mb-3">
+        <div class="card shadow-sm text-center">
+          <div class="card-body">
+            <h5 class="card-title">Vibration</h5>
+            <canvas id="vibrationGauge" width="200" height="200"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alerts -->
+      <div class="col-md-6 mb-3">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">System Alerts</h5>
+            <div id="alerts" class="alert-container">No Alerts Yet</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Map -->
+      <div class="col-md-6 mb-3 widget" draggable="true" id="widget-map">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">Device Location</h5>
+            <div id="map" style="height: 300px;">Loading Map...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Combined Graph -->
+      <div class="col-md-6 mb-3">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">Historical Data Trends</h5>
+            <canvas id="dataChart" height="150"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cooling System Modal -->
+  <div class="modal fade" id="coolingSystemModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content text-center">
+        <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title">⚠️ Cooling System Activated</h5>
+        </div>
+        <div class="modal-body">
+          <p id="coolingMessage">Sensor exceeded threshold! Activating cooling system...</p>
+          <div class="progress my-3">
+            <div id="coolingProgress" class="progress-bar progress-bar-striped progress-bar-animated bg-info" role="progressbar" style="width: 0%">0%</div>
+          </div>
+          <p>Cooling down... Please wait.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QR Scan Modal -->
+  <div class="modal fade" id="qrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content text-center">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title">🔍 QR Code Authentication</h5>
+        </div>
+        <div class="modal-body">
+          <p>Scan or upload your QR code to proceed.</p>
+          <input type="file" id="qrUpload" accept="image/*" class="form-control mb-3">
+          <video id="qrVideo" width="100%" style="border-radius:10px;"></video>
+          <p id="qrMsg" class="text-danger mt-2 d-none">❌ No QR code detected.</p>
+          <button class="btn btn-success mt-3" id="simulateQRBtn">Simulate QR Success</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Credentials Modal -->
+  <div class="modal fade" id="authModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content text-center">
+        <div class="modal-header bg-success text-white">
+          <h5 class="modal-title">🔐 Enter Credentials</h5>
+        </div>
+        <div class="modal-body">
+          <input type="text" id="authUsername" placeholder="Username" class="form-control mb-2">
+          <input type="password" id="authPassword" placeholder="Password" class="form-control mb-2">
+          <button class="btn btn-primary w-100" id="loginBtn">Login</button>
+          <p id="authMsg" class="text-danger mt-2 d-none">❌ Invalid credentials</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="app.js"></script>
+
+  <script>
+    const qrModal = new bootstrap.Modal(document.getElementById('qrModal'));
+    const authModal = new bootstrap.Modal(document.getElementById('authModal'));
+
+    document.getElementById('authBtn').addEventListener('click', () => {
+      qrModal.show();
+    });
+
+    document.getElementById('simulateQRBtn').addEventListener('click', () => {
+      qrModal.hide();
+      setTimeout(() => authModal.show(), 500);
+    });
+
+    document.getElementById('loginBtn').addEventListener('click', () => {
+      const u = document.getElementById('authUsername').value.trim();
+      const p = document.getElementById('authPassword').value.trim();
+      const msg = document.getElementById('authMsg');
+
+      if (u === 'driver' && p === 'letmein') {
+        msg.classList.add('d-none');
+        authModal.hide();
+        alert('✅ Authentication Successful!');
+      } else {
+        msg.classList.remove('d-none');
+      }
+    });
+
+    document.getElementById('qrUpload').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            if (code) {
+              qrModal.hide();
+              setTimeout(() => authModal.show(), 500);
+            } else {
+              document.getElementById('qrMsg').classList.remove('d-none');
+            }
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  </script>
+</body>
+</html>
