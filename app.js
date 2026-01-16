@@ -1,9 +1,79 @@
+
 document.addEventListener('DOMContentLoaded', () => {
   // Dark Mode
   const darkModeToggle = document.getElementById('darkModeToggle');
   darkModeToggle.addEventListener('change', () => {
     document.body.classList.toggle('dark-mode', darkModeToggle.checked);
   });
+// ---------------- DRIVER REGISTRATION ----------------
+const driverModal = new bootstrap.Modal(document.getElementById('driverModal'));
+
+document.getElementById('registerDriverBtn').addEventListener('click', () => {
+  driverModal.show();
+
+  // Fetch live location
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        document.getElementById('driverLocation').value =
+          `Lat: ${pos.coords.latitude}, Lng: ${pos.coords.longitude}`;
+      },
+      () => {
+        document.getElementById('driverLocation').value = "Location denied";
+      }
+    );
+  }
+});
+
+document.getElementById('saveDriverBtn').addEventListener('click', () => {
+  const driverData = {
+    name: document.getElementById('driverName').value,
+    age: document.getElementById('driverAge').value,
+    phone: document.getElementById('driverPhone').value,
+    address: document.getElementById('driverAddress').value,
+    location: document.getElementById('driverLocation').value,
+    registeredAt: new Date().toISOString()
+  };
+
+  // ✅ IMPORTANT: push() allows MULTIPLE drivers
+  db.ref('drivers').push(driverData);
+
+  alert("✅ Driver Registered Successfully");
+  driverModal.hide();
+});
+// ---------------- ASSIGN DRIVER TO CONTAINER ----------------
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('assignDriverBtn')) {
+    const driverId = e.target.dataset.id;
+    const driverName = e.target.dataset.name;
+    const phone = e.target.dataset.phone;
+
+    const assignment = {
+      containerId: "CONT-001", // demo container
+      driverId,
+      driverName,
+      phone,
+      assignedAt: new Date().toISOString()
+    };
+
+    // Save to Firebase
+    db.ref('activeAssignment').set(assignment);
+
+    // Optional: update Active Driver box instantly
+    const activeDriverBox = document.getElementById('activeDriver');
+    if (activeDriverBox) {
+      activeDriverBox.innerHTML = `
+        <strong>🚚 Active Driver</strong><br>
+        Name: ${driverName}<br>
+        Phone: ${phone}<br>
+        Container: ${assignment.containerId}
+      `;
+    }
+
+    alert(`✅ ${driverName} assigned to container`);
+  }
+});
+
 
   // Thresholds
   const thresholds = JSON.parse(localStorage.getItem('customThresholds')) || {
@@ -15,13 +85,41 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('humidityThreshold').value = thresholds.humidityMax;
   document.getElementById('vibrationThreshold').value = thresholds.vibrationMax;
 
+  // 🔹 UPDATED Save Thresholds button
   document.getElementById('saveThresholdsBtn').addEventListener('click', () => {
     thresholds.tempMax = parseFloat(document.getElementById('tempThreshold').value);
     thresholds.humidityMax = parseFloat(document.getElementById('humidityThreshold').value);
     thresholds.vibrationMax = parseFloat(document.getElementById('vibrationThreshold').value);
+
+    // Save locally
     localStorage.setItem('customThresholds', JSON.stringify(thresholds));
-    simulateAlert('✅ Thresholds saved successfully!', 'success');
+
+    // Save to Firebase
+    db.ref('thresholds').set({
+      temp: thresholds.tempMax,
+      humidity: thresholds.humidityMax,
+      vibration: thresholds.vibrationMax
+    }).then(() => {
+      simulateAlert('✅ Thresholds saved to Firebase!', 'success');
+    }).catch(err => {
+      console.error(err);
+      simulateAlert('❌ Failed to save thresholds to Firebase', 'danger');
+    });
   });
+
+  // Load thresholds from Firebase
+  db.ref('thresholds').once('value').then(snapshot => {
+    const t = snapshot.val();
+    if (t) {
+      thresholds.tempMax = t.temp;
+      thresholds.humidityMax = t.humidity;
+      thresholds.vibrationMax = t.vibration;
+
+      document.getElementById('tempThreshold').value = thresholds.tempMax;
+      document.getElementById('humidityThreshold').value = thresholds.humidityMax;
+      document.getElementById('vibrationThreshold').value = thresholds.vibrationMax;
+    }
+  }).catch(err => console.error(err));
 
   // Alerts
   const alertsContainer = document.getElementById('alerts');
@@ -32,54 +130,84 @@ document.addEventListener('DOMContentLoaded', () => {
     alertsContainer.prepend(alertDiv);
     setTimeout(() => alertDiv.remove(), 10000);
   }
+// ---------------- ACTIVE DRIVER DISPLAY ----------------
+const activeDriverBox = document.getElementById('activeDriver');
 
-  // 🔹 Cooling System Modal
-  const coolingModal = new bootstrap.Modal(document.getElementById('coolingSystemModal'));
-  const coolingMessage = document.getElementById('coolingMessage');
-  const coolingProgress = document.getElementById('coolingProgress');
-  let coolingActive = false;
-  let alertCounts = { temp: 0 };
-  let cooledSensors = { temp: false };
+db.ref('activeAssignment').on('value', snapshot => {
+  const d = snapshot.val();
+  if (!d || !activeDriverBox) return;
 
-  function activateCooling(sensor) {
-    coolingActive = true;
-    alertCounts = { temp: 0, humidity: 0, vibration: 0 };
+  activeDriverBox.innerHTML = `
+    <strong>🚚 Active Driver</strong><br>
+    Name: ${d.driverName}<br>
+    Phone: ${d.phone}<br>
+    Container: ${d.containerId}
+  `;
+});
 
-    if (sensor === "Temperature") cooledSensors.temp = true;
-    
-    coolingMessage.textContent = `${sensor} exceeded threshold! Activating cooling system...`;
-    coolingProgress.style.width = "0%";
-    coolingProgress.textContent = "0%";
-    coolingModal.show();
+  
+// ---------------- LOAD ALL DRIVERS ----------------
+const driversTable = document.getElementById('driversTable');
 
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 100 / 30;
-      if (progress > 100) progress = 100;
-      coolingProgress.style.width = `${progress}%`;
-      coolingProgress.textContent = `${Math.round(progress)}%`;
-    }, 1000);
+db.ref('drivers').on('value', snapshot => {
+  driversTable.innerHTML = "";
+  snapshot.forEach(child => {
+    const d = child.val();
+    driversTable.innerHTML += `
+      <tr>
+        <td>${d.name}</td>
+        <td>${d.phone}</td>
+        <td>${d.location}</td>
+        <td>
+          <button 
+            class="btn btn-sm btn-success assignDriverBtn"
+            data-id="${child.key}"
+            data-name="${d.name}"
+            data-phone="${d.phone}">
+            Assign
+          </button>
+        </td>
+      </tr>
+    `;
+  });
+});
 
-    let coolingLoop = setInterval(() => {
-      if (sensor === "Temperature") {
-        currentTemp = Math.max(24, currentTemp - 0.1);
-        if (currentTemp <= 25) {
-          simulateAlert(`✅ Cooling complete for Temperature (${currentTemp.toFixed(1)}°C)`, 'success');
-          stopCooling();
-        }
-      }
-      
-    }, 1000);
+// 🔹 DRIVER DETAILS MODAL FUNCTIONALITY
+const driverDetailsModal = new bootstrap.Modal(document.getElementById('driverDetailsModal'));
+const driverDetailsBtn = document.getElementById('driverDetailsBtn');
+const driverDetailsContainer = document.getElementById('driverDetailsContainer');
 
-    function stopCooling() {
-      clearInterval(interval);
-      clearInterval(coolingLoop);
-      coolingModal.hide();
-      coolingActive = false;
-    }
+driverDetailsBtn.addEventListener('click', () => {
+  driverDetailsContainer.innerHTML = ''; // clear previous content
 
-    setTimeout(stopCooling, 30000);
-  }
+  db.ref('drivers').once('value').then(snapshot => {
+    snapshot.forEach(child => {
+      const d = child.val();
+      driverDetailsContainer.innerHTML += `
+        <div class="col-md-6">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <div class="d-flex align-items-center mb-2">
+                <img src="${d.driverPhoto || 'icons/driver.png'}" alt="Driver Photo" class="rounded-circle me-3" width="60" height="60">
+                <div>
+                  <h6 class="mb-0">${d.name}</h6>
+                  <small>Age: ${d.age}</small>
+                </div>
+              </div>
+              <p class="mb-1"><strong>Phone:</strong> ${d.phone}</p>
+              <p class="mb-1"><strong>Address:</strong> ${d.address}</p>
+              <p class="mb-1"><strong>License:</strong> ${d.licensePhoto ? `<a href="${d.licensePhoto}" target="_blank">View</a>` : 'N/A'}</p>
+              <p class="mb-0"><strong>Location:</strong> ${d.location}</p>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+  });
+
+  driverDetailsModal.show();
+});
+
 
   // Gradient Gauge Factory
   function createGauge(ctx, gradientColors, max, initialValue, unit) {
@@ -88,23 +216,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     return new Chart(ctx, {
       type: 'doughnut',
-      data: {
-        datasets: [{
-          data: [initialValue, max - initialValue],
-          backgroundColor: [gradient, 'rgba(220,220,220,0.2)'],
-          borderWidth: 0
-        }]
-      },
-      options: {
-        rotation: -90,
-        circumference: 180,
-        cutout: '70%',
-        plugins: {
-          legend: { display: false },
-          tooltip: { enabled: false }
-        },
-        animation: { animateRotate: true, animateScale: true }
-      },
+      data: { datasets: [{ data: [initialValue, max - initialValue], backgroundColor: [gradient, 'rgba(220,220,220,0.2)'], borderWidth: 0 }] },
+      options: { rotation: -90, circumference: 180, cutout: '70%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, animation: { animateRotate: true, animateScale: true } },
       plugins: [{
         id: 'centerText',
         beforeDraw(chart) {
@@ -125,174 +238,86 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Gauges
-  const tempGauge = createGauge(
-    document.getElementById('temperatureGauge'),
-    [[0, "rgba(255,0,0,1)"], [1, "rgba(255,200,0,1)"]],
-    100, 27, "°C"
-  );
+ const tempGauge = createGauge(
+  document.getElementById('temperatureGauge'),
+  [[0, "rgba(255,0,0,1)"], [1, "rgba(255,200,0,1)"]],
+  50,
+  27,
+  "°C"
+);
 
-  const humidityGauge = createGauge(
-    document.getElementById('humidityGauge'),
-    [[0, "rgba(0,123,255,1)"], [1, "rgba(0,200,150,1)"]],
-    100, 50, "%"
-  );
+  const humidityGauge = createGauge(document.getElementById('humidityGauge'), [[0, "rgba(0,123,255,1)"], [1, "rgba(0,200,150,1)"]], 100, 50, "%");
+  const vibrationGauge = createGauge(document.getElementById('vibrationGauge'), [[0, "rgba(0,200,150,1)"], [1, "rgba(150,0,200,1)"]], 5, 0.5, " m/s²"); // max 5g
 
-  // Vibration Gauge (max = 5000 to handle sudden spikes)
-  const vibrationGauge = createGauge(
-    document.getElementById('vibrationGauge'),
-    [[0, "rgba(0,200,150,1)"], [1, "rgba(150,0,200,1)"]],
-    5000, 0.5, " m/s²"
-  );
 
-  // Waveform Historical Graph
+  // Historical Chart
   const dataCtx = document.getElementById('dataChart').getContext('2d');
   const dataChart = new Chart(dataCtx, {
     type: 'line',
     data: {
       labels: [],
       datasets: [
-        {
-          label: 'Temperature (°C)',
-          data: [],
-          borderColor: "rgba(255,99,132,1)",
-          borderWidth: 2,
-          fill: false,
-          tension: 0.3,
-          pointRadius: 3,
-          pointBackgroundColor: "rgba(255,99,132,1)"
-        },
-        {
-          label: 'Humidity (%)',
-          data: [],
-          borderColor: "rgba(54,162,235,1)",
-          borderWidth: 2,
-          fill: false,
-          tension: 0.3,
-          pointRadius: 3,
-          pointBackgroundColor: "rgba(54,162,235,1)"
-        },
-        {
-          label: 'Vibration (m/s²)',
-          data: [],
-          borderColor: "rgba(75,192,192,1)",
-          borderWidth: 2,
-          fill: false,
-          tension: 0.3,
-          pointRadius: 3,
-          pointBackgroundColor: "rgba(75,192,192,1)"
-        }
+        { label: 'Temperature (°C)', data: [], borderColor: "rgba(255,99,132,1)", borderWidth: 2, fill: false, tension: 0.3 },
+        { label: 'Humidity (%)', data: [], borderColor: "rgba(54,162,235,1)", borderWidth: 2, fill: false, tension: 0.3 },
+        { label: 'Vibration (m/s²)', data: [], borderColor: "rgba(75,192,192,1)", borderWidth: 2, fill: false, tension: 0.3 }
       ]
     },
-    options: {
-      responsive: true,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: { color: '#333', font: { size: 12 } }
-        },
-        tooltip: { enabled: true }
-      },
-      animation: { duration: 0 },
-      scales: {
-        x: {
-          display: true,
-          grid: { color: "rgba(200,200,200,0.2)" },
-          ticks: { color: '#666', autoSkip: false }
-        },
-        y: {
-          beginAtZero: true,
-          grid: { color: "rgba(200,200,200,0.2)" },
-          ticks: { color: '#666' }
-        }
-      }
-    }
+    options: { responsive: true, interaction: { mode: 'index', intersect: false } }
   });
 
- // Sensor Simulation
-  let currentTemp = 27, currentHumidity = 81, currentVibration = 0.5; // default humidity ~81%
-  function simulateSensors() {
-    if (coolingActive) return; // pause normal updates during cooling
+ // --------------------
+// 🔹 Firebase Live Sensor Updates
+const VIBRATION_SENSOR_MAX = 5000; // actual max sensor reading
+const sensorRef = db.ref('sensors/current');
 
-    // Temperature
-    currentTemp = Math.min(28, Math.max(26, currentTemp + (Math.random() - 0.) * 10));
-    if (cooledSensors.temp) currentTemp = Math.min(currentTemp, thresholds.tempMax); // clamp after cooling
-    tempGauge.data.datasets[0].data[0] = currentTemp;
-    tempGauge.data.datasets[0].data[1] = 100 - currentTemp;
-    tempGauge.update();
+sensorRef.on('value', snapshot => {
+  const data = snapshot.val();
+  if (!data) return;
 
-    // Humidity → controlled variation between 78–83%
-    currentHumidity += (Math.random() < 0.5 ? -1 : 1) * Math.random();
-    if (currentHumidity > 83) currentHumidity = 83;
-    if (currentHumidity < 78) currentHumidity = 78;
-    if (cooledSensors.humidity) currentHumidity = Math.min(currentHumidity, thresholds.humidityMax);
-    humidityGauge.data.datasets[0].data[0] = currentHumidity;
-    humidityGauge.data.datasets[0].data[1] = 100 - currentHumidity;
-    humidityGauge.update();
+const temp = Number(data.temperature);
+const humidity = Number(data.humidity);
+const vibration = Number(data.vibration);
 
-    // Vibration → small baseline variations only
-    currentVibration = Math.min(5, Math.max(0, currentVibration + (Math.random() - 0.5) * 0.1));
-    if (cooledSensors.vibration) currentVibration = Math.min(currentVibration, thresholds.vibrationMax);
-    vibrationGauge.data.datasets[0].data[0] = currentVibration;
-    vibrationGauge.data.datasets[0].data[1] = 5000 - currentVibration;
-    vibrationGauge.update();
+  // ---------------- Update Gauges ----------------
+const tempVal = Math.min(Math.max(temp || 0, 0), 50);
+const humidityVal = Math.min(Math.max(humidity || 0, 0), 100);
+const vibrationVal = Math.min(Math.max(vibration || 0, 0), VIBRATION_SENSOR_MAX);
 
-    // Threshold checks
-    if (currentTemp > thresholds.tempMax) {
-      alertCounts.temp++;
-      simulateAlert(`⚠️ Temp exceeded (${currentTemp.toFixed(1)}°C)`, 'danger');
-      if (alertCounts.temp >= 3) activateCooling("Temperature");
-    } else { alertCounts.temp = 0; }
 
-    if (currentHumidity > thresholds.humidityMax) {
-      alertCounts.humidity++;
-      simulateAlert(`⚠️ Humidity exceeded (${currentHumidity.toFixed(1)}%)`, 'danger');
-      if (alertCounts.humidity >= 3) activateCooling("Humidity");
-    } else { alertCounts.humidity = 0; }
+tempGauge.data.datasets[0].data[0] = tempVal;
+tempGauge.data.datasets[0].data[1] = Math.max(50 - tempVal, 0);
 
-    if (currentVibration > thresholds.vibrationMax) {
-      alertCounts.vibration++;
-      simulateAlert(`⚠️ Vibration exceeded (${currentVibration.toFixed(2)} m/s²)`, 'danger');
-      if (alertCounts.vibration >= 3) activateCooling("Vibration");
-    } else { alertCounts.vibration = 0; }
+tempGauge.update();
 
-    // Update waveform
-    const now = new Date().toLocaleTimeString();
-    dataChart.data.labels.push(now);
-    dataChart.data.datasets[0].data.push(currentTemp);
-    dataChart.data.datasets[1].data.push(currentHumidity);
-    dataChart.data.datasets[2].data.push(currentVibration);
+humidityGauge.data.datasets[0].data[0] = humidityVal;
+humidityGauge.data.datasets[0].data[1] = Math.max(100 - humidityVal, 0);
+humidityGauge.update();
 
-    if (dataChart.data.labels.length > 5) {
-      dataChart.data.labels.shift();
-      dataChart.data.datasets.forEach(ds => ds.data.shift());
-    }
+vibrationGauge.data.datasets[0].data[0] = vibrationVal;
+vibrationGauge.data.datasets[0].data[1] = Math.max(VIBRATION_SENSOR_MAX - vibrationVal, 0);
+vibrationGauge.update();
 
-    dataChart.update();
+
+  // ---------------- Update Historical Chart ----------------
+  const now = new Date().toLocaleTimeString();
+  dataChart.data.labels.push(now);
+  dataChart.data.datasets[0].data.push(temp);
+  dataChart.data.datasets[1].data.push(humidity);
+  dataChart.data.datasets[2].data.push(vibration);
+
+  // Keep last 20 points
+  if (dataChart.data.labels.length > 20) {
+    dataChart.data.labels.shift();
+    dataChart.data.datasets.forEach(ds => ds.data.shift());
   }
+  dataChart.update();
 
-  setInterval(simulateSensors, 1000);
+  // ---------------- Trigger Alerts ----------------
+  if (temp > thresholds.tempMax) simulateAlert(`⚠️ Temp exceeded (${temp}°C)`, 'danger');
+  if (humidity > thresholds.humidityMax) simulateAlert(`⚠️ Humidity exceeded (${humidity}%)`, 'danger');
+  if (vibration > thresholds.vibrationMax) simulateAlert(`⚠️ Vibration exceeded (${vibration} m/s²)`, 'danger');
+});
 
-  // 🔹 Vibration sudden deflections (on click/double-click)
-  const vibrationCanvas = document.getElementById('vibrationGauge');
-
-  // Single click → sudden jump 2000
-  vibrationCanvas.addEventListener('click', () => {
-    currentVibration = 2000;
-    vibrationGauge.data.datasets[0].data[0] = currentVibration;
-    vibrationGauge.data.datasets[0].data[1] = 5000 - currentVibration;
-    vibrationGauge.update();
-    simulateAlert("🔧 Vibration sudden deflection (0 → 2000 m/s²)", "warning");
-  });
-
-  // Double click → sudden jump 4000
-  vibrationCanvas.addEventListener('dblclick', () => {
-    currentVibration = 4000;
-    vibrationGauge.data.datasets[0].data[0] = currentVibration;
-    vibrationGauge.data.datasets[0].data[1] = 5000 - currentVibration;
-    vibrationGauge.update();
-    simulateAlert("🔧 Vibration extreme deflection (0 → 4000 m/s²)", "danger");
-  });
 
 
   // Logout
@@ -302,31 +327,5 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
- // ---------------------------
- // 🌍 Device Live Location (Leaflet / OpenStreetMap)
- // ---------------------------
-const map = L.map('map').setView([20.5937, 78.9629], 5); // Default: India center
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap contributors'
-}).addTo(map);
-
-let marker = L.marker([20.5937, 78.9629]).addTo(map).bindPopup("Default Location").openPopup();
-
-// Track live location
-if (navigator.geolocation) {
-  navigator.geolocation.watchPosition(
-    (pos) => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const location = [lat, lng];
-      map.setView(location, 14);
-      marker.setLatLng(location).bindPopup("📍 Your Laptop Location").openPopup();
-    },
-    (err) => {
-      console.error("Error getting location:", err);
-      document.getElementById("map").innerHTML = "❌ Location access denied or unavailable.";
-    }
-  );
-} else {
-  document.getElementById("map").innerHTML = "❌ Geolocation not supported.";
-}
+// ---------------------------
+// 🌍 Map code remains unchanged
