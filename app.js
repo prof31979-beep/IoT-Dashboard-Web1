@@ -1,5 +1,17 @@
 
 document.addEventListener('DOMContentLoaded', () => {
+  let soundEnabled = false;
+  window.enableSound = function () {
+  const siren = document.getElementById('alertBeep');
+  siren.play().then(() => {
+    siren.pause();
+    siren.currentTime = 0;
+    soundEnabled = true;
+    alert("🔊 Siren Enabled");
+  }).catch(() => {
+    alert("Click again to allow sound");
+  });
+};
   // Dark Mode
   const darkModeToggle = document.getElementById('darkModeToggle');
   darkModeToggle.addEventListener('change', () => {
@@ -123,13 +135,31 @@ document.addEventListener('click', e => {
 
   // Alerts
   const alertsContainer = document.getElementById('alerts');
-  function simulateAlert(message, type = 'warning') {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type}`;
-    alertDiv.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
-    alertsContainer.prepend(alertDiv);
-    setTimeout(() => alertDiv.remove(), 10000);
-  }
+ function simulateAlert(message, type = 'warning') {
+  const alertDiv = document.createElement('div');
+  alertDiv.className = `alert alert-${type}`;
+  alertDiv.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+  alertsContainer.prepend(alertDiv);
+
+  // 🔊 PLAY SIREN
+  playSiren();
+
+  setTimeout(() => alertDiv.remove(), 10000);
+}
+
+ function playSiren() {
+  if (!soundEnabled) return;   // ✅ THIS LINE IS THE FIX
+
+  const siren = document.getElementById('alertBeep');
+  if (!siren) return;
+
+  siren.currentTime = 0;
+  siren.play().catch(err => {
+    console.log("Siren play failed:", err);
+  });
+}
+
+
 // ---------------- ACTIVE DRIVER DISPLAY ----------------
 const activeDriverBox = document.getElementById('activeDriver');
 
